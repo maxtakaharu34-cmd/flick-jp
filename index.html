@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="theme-color" content="#0a0010" />
+<title>フリックシューティング</title>
+<link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+P+One&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0;height:100%;overflow:hidden}
+body{font-family:system-ui,sans-serif;color:#fff;background:#0a0010;touch-action:none;user-select:none;-webkit-tap-highlight-color:transparent}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;padding:8px;gap:6px}
+.title{font-family:"Mochiy Pop P One",sans-serif;font-size:18px;color:#a874e0;-webkit-text-stroke:2px #000;paint-order:stroke fill;margin:4px 0}
+.hud{display:flex;justify-content:space-between;width:100%;max-width:480px;gap:6px;font-size:13px}
+.hud .box{flex:1;background:rgba(168,116,224,.2);border:2px solid #a874e0;border-radius:10px;padding:5px 10px;text-align:center;font-weight:bold}
+canvas{flex:1;width:100%;max-width:480px;background:radial-gradient(600px 400px at 50% 30%,rgba(168,116,224,.2),transparent),#1a0030;border:3px solid #a874e0;border-radius:14px;touch-action:none}
+.over{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:50}
+.over.show{display:flex}
+.over .panel{background:#1a0030;border:3px solid #a874e0;border-radius:18px;padding:20px;text-align:center;display:flex;flex-direction:column;gap:10px}
+.over .panel h2{margin:0;color:#ef4444;font-family:"Mochiy Pop P One",sans-serif}
+.over .panel button{background:#a874e0;color:#fff;border:3px solid #fff;padding:10px 18px;border-radius:999px;font-family:"Mochiy Pop P One",sans-serif;cursor:pointer;font-size:14px}
+.hint{font-size:10px;color:#a874e0;text-align:center}
+</style>
+</head>
+<body>
+<div id="app">
+<h1 class="title">フリックシューティング 🚀</h1>
+<div class="hud">
+  <div class="box">SCORE: <span id="sc">0</span></div>
+  <div class="box">HI: <span id="hi">0</span></div>
+  <div class="box">LIFE: <span id="lf">3</span></div>
+</div>
+<canvas id="cv"></canvas>
+<div class="hint">敵をフリック（指でなぞって弾を発射）</div>
+</div>
+<div class="over" id="over">
+  <div class="panel">
+    <h2>💀 GAME OVER</h2>
+    <div>SCORE: <span id="o-sc">0</span></div>
+    <div id="o-best" style="font-size:11px;color:#a874e0"></div>
+    <button id="btn-retry">もう一度</button>
+  </div>
+</div>
+<script>
+(()=>{
+'use strict';
+const $=(id)=>document.getElementById(id);
+const cv=$('cv'),ctx=cv.getContext('2d');
+const HI_KEY='flick_jp_hi';
+let W,H,enemies,bullets,particles,score,life,best=parseInt(localStorage.getItem(HI_KEY)||'0',10),tick,gameOver;
+let dragStart=null,dragEnd=null;
+function resize(){const r=cv.getBoundingClientRect();cv.width=r.width;cv.height=r.height;W=cv.width;H=cv.height}
+function start(){
+  resize();
+  enemies=[];bullets=[];particles=[];score=0;life=3;tick=0;gameOver=false;
+  $('sc').textContent=0;$('lf').textContent=3;$('hi').textContent=best;
+  $('over').classList.remove('show');
+  loop();
+}
+function spawn(){
+  const x=20+Math.random()*(W-40);
+  enemies.push({x,y:-20,r:14+Math.random()*8,vy:.5+Math.random()*.8+score*.0005,hp:1+Math.floor(Math.random()*2)});
+}
+function loop(){
+  if(gameOver)return;
+  tick++;
+  // background
+  ctx.fillStyle='rgba(10,0,20,.4)';ctx.fillRect(0,0,W,H);
+  // stars
+  for(let i=0;i<20;i++){
+    const x=(i*97+tick)%W,y=(i*53+tick*2)%H;
+    ctx.fillStyle='rgba(255,255,255,'+(.3+Math.random()*.3)+')';
+    ctx.fillRect(x,y,1,1);
+  }
+  // spawn
+  if(tick%Math.max(20,60-Math.floor(score/10))===0)spawn();
+  // enemies
+  enemies.forEach(e=>{e.y+=e.vy});
+  enemies=enemies.filter(e=>{
+    if(e.y>H+30){life--;$('lf').textContent=life;if(life<=0)endGame();beep(110,.2,'sawtooth');return false}
+    return true
+  });
+  // bullets
+  bullets.forEach(b=>{b.x+=b.vx;b.y+=b.vy;b.life--});
+  bullets=bullets.filter(b=>b.life>0&&b.x>-20&&b.x<W+20&&b.y>-20&&b.y<H+20);
+  // collisions
+  for(const b of bullets){
+    for(const e of enemies){
+      const dx=b.x-e.x,dy=b.y-e.y;
+      if(dx*dx+dy*dy<(e.r+5)*(e.r+5)){
+        e.hp--;b.life=0;
+        if(e.hp<=0){
+          score+=10;$('sc').textContent=score;
+          for(let i=0;i<8;i++)particles.push({x:e.x,y:e.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,life:30});
+          beep(880,.08);
+          enemies.splice(enemies.indexOf(e),1);
+        }else beep(660,.04);
+        break;
+      }
+    }
+  }
+  // particles
+  particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--});
+  particles=particles.filter(p=>p.life>0);
+  // draw enemies
+  enemies.forEach(e=>{
+    ctx.fillStyle=e.hp>1?'#ef4444':'#ff5fa2';
+    ctx.beginPath();ctx.arc(e.x,e.y,e.r,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#000';ctx.font=(e.r*1.4)+'px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(e.hp>1?'👾':'🛸',e.x,e.y);
+  });
+  // draw bullets
+  bullets.forEach(b=>{
+    ctx.fillStyle='#ffe066';ctx.beginPath();ctx.arc(b.x,b.y,4,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=10;ctx.shadowColor='#ffe066';ctx.fill();ctx.shadowBlur=0;
+  });
+  // particles
+  particles.forEach(p=>{ctx.fillStyle='rgba(255,255,255,'+(p.life/30)+')';ctx.fillRect(p.x,p.y,3,3)});
+  // drag preview
+  if(dragStart&&dragEnd){
+    ctx.strokeStyle='#ffe066';ctx.lineWidth=3;ctx.setLineDash([5,5]);
+    ctx.beginPath();ctx.moveTo(dragStart.x,dragStart.y);ctx.lineTo(dragEnd.x,dragEnd.y);ctx.stroke();ctx.setLineDash([]);
+  }
+  requestAnimationFrame(loop);
+}
+function endGame(){
+  gameOver=true;
+  if(score>best){best=score;localStorage.setItem(HI_KEY,String(best));$('o-best').textContent='🏆 自己ベスト更新！'}
+  else $('o-best').textContent='HI: '+best;
+  $('o-sc').textContent=score;$('over').classList.add('show');
+}
+let ac=null;const en=()=>{if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();return ac};
+const beep=(f,d,t='triangle',g=.1)=>{const a=en();const o=a.createOscillator();const gn=a.createGain();o.type=t;o.frequency.value=f;gn.gain.value=g;gn.gain.exponentialRampToValueAtTime(.0001,a.currentTime+d);o.connect(gn).connect(a.destination);o.start();o.stop(a.currentTime+d)};
+function getXY(e){const r=cv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top}}
+cv.addEventListener('touchstart',e=>{en();dragStart=getXY(e);dragEnd=dragStart;e.preventDefault()},{passive:false});
+cv.addEventListener('touchmove',e=>{dragEnd=getXY(e);e.preventDefault()},{passive:false});
+cv.addEventListener('touchend',e=>{
+  if(!dragStart||!dragEnd)return;
+  const dx=dragEnd.x-dragStart.x,dy=dragEnd.y-dragStart.y;
+  const len=Math.hypot(dx,dy);
+  if(len>10){
+    const speed=Math.min(15,len/10);
+    bullets.push({x:dragStart.x,y:dragStart.y,vx:dx/len*speed,vy:dy/len*speed,life:80});
+    beep(440,.06);
+  }
+  dragStart=null;dragEnd=null;e.preventDefault();
+},{passive:false});
+cv.addEventListener('mousedown',e=>{en();dragStart=getXY(e);dragEnd=dragStart});
+cv.addEventListener('mousemove',e=>{if(dragStart)dragEnd=getXY(e)});
+cv.addEventListener('mouseup',e=>{
+  if(!dragStart||!dragEnd)return;
+  const dx=dragEnd.x-dragStart.x,dy=dragEnd.y-dragStart.y;
+  const len=Math.hypot(dx,dy);
+  if(len>10){
+    const speed=Math.min(15,len/10);
+    bullets.push({x:dragStart.x,y:dragStart.y,vx:dx/len*speed,vy:dy/len*speed,life:80});
+    beep(440,.06);
+  }
+  dragStart=null;dragEnd=null;
+});
+window.addEventListener('resize',resize);
+$('btn-retry').addEventListener('click',()=>{en();start()});
+start();
+})();
+</script>
+</body>
+</html>
